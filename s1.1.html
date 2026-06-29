@@ -1,0 +1,1875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Survival Tag - Ultimate Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0f172a; /* slate-900 */
+            color: #f8fafc; /* slate-50 */
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+            transition: padding 0.3s ease;
+        }
+
+        /* Khi vào trạng thái chơi game, loại bỏ padding để tối ưu hóa không gian full-screen */
+        body.playing {
+            padding: 0 !important;
+        }
+
+        #game-container {
+            position: relative;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+            border-radius: 16px;
+            overflow: hidden;
+            background-color: #020617; /* slate-950 */
+            border: 3px solid #1e293b; /* slate-800 */
+            transition: border-color 0.15s ease, width 0.3s ease, height 0.3s ease;
+        }
+
+        /* Chế độ giả lập Fullscreen siêu mượt khi chơi trong iframe / trình duyệt chặn Native Fullscreen */
+        #game-container.pseudo-fullscreen {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            z-index: 9999 !important;
+            border: none !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+        }
+
+        body.playing #game-container {
+            border-color: #3b82f6; /* Đổi màu viền xanh đậm chất chiến đấu */
+        }
+
+        body.playing #game-container.pseudo-fullscreen {
+            border: none !important;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            pointer-events: none;
+            padding: 1.25rem;
+            box-sizing: border-box;
+            display: flex;
+            justify-content: space-between;
+            z-index: 5;
+        }
+
+        .health-bar-container {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .health-label {
+            font-size: 0.8rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+        }
+
+        .health-dots {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+            max-width: 220px;
+        }
+
+        .health-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background-color: #334155; /* slate-700 */
+            border: 2px solid #0f172a;
+            transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .health-dot.active-player {
+            background: radial-gradient(circle, #4ade80 0%, #22c55e 100%);
+            box-shadow: 0 0 10px rgba(34, 197, 94, 0.8);
+        }
+
+        .health-dot.active-bot {
+            background: radial-gradient(circle, #f87171 0%, #ef4444 100%);
+            box-shadow: 0 0 10px rgba(239, 68, 68, 0.8);
+        }
+
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(8, 10, 21, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.4s ease, visibility 0.4s;
+            z-index: 20;
+            padding: 2rem;
+            box-sizing: border-box;
+        }
+
+        .overlay.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+            color: white;
+            border: none;
+            padding: 1rem 3rem;
+            font-size: 1.5rem;
+            font-weight: 800;
+            border-radius: 9999px;
+            cursor: pointer;
+            box-shadow: 0 10px 25px -5px rgba(29, 78, 216, 0.5);
+            transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .btn:hover {
+            transform: translateY(-3px) scale(1.03);
+            box-shadow: 0 15px 30px -5px rgba(29, 78, 216, 0.7);
+            filter: brightness(1.1);
+        }
+
+        .btn:active {
+            transform: translateY(1px) scale(0.98);
+            box-shadow: 0 5px 10px -2px rgba(29, 78, 216, 0.5);
+        }
+
+        /* Mobile Controls Layout */
+        #mobile-controls {
+            display: none;
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            justify-content: space-between;
+            padding: 0 30px;
+            box-sizing: border-box;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .joystick-area {
+            width: 130px;
+            height: 130px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px dashed rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto;
+        }
+
+        .joystick-stick {
+            width: 50px;
+            height: 50px;
+            background: radial-gradient(circle, #f8fafc 0%, #cbd5e1 100%);
+            border-radius: 50%;
+            position: absolute;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            transition: transform 0.05s ease;
+        }
+
+        .mobile-btn-container {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            pointer-events: auto;
+        }
+
+        .action-circle-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: 2px solid #475569;
+            background: rgba(15, 23, 42, 0.8);
+            color: white;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+            font-size: 1.25rem;
+            transition: transform 0.1s, background-color 0.1s;
+        }
+
+        .action-circle-btn.active {
+            transform: scale(1.15);
+            border-color: #3b82f6;
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.6);
+        }
+
+        .action-circle-btn:active {
+            transform: scale(0.9);
+        }
+
+        #action-slash {
+            width: 75px;
+            height: 75px;
+            border-color: #22c55e;
+            background: rgba(34, 197, 94, 0.2);
+            font-size: 1.5rem;
+        }
+
+        #action-slash:active {
+            background: rgba(34, 197, 94, 0.5);
+        }
+
+        /* Screen shake animation template */
+        @keyframes shake {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            10% { transform: translate(-1px, -2px) rotate(-1deg); }
+            20% { transform: translate(-3px, 0px) rotate(1deg); }
+            30% { transform: translate(0px, 2px) rotate(0deg); }
+            40% { transform: translate(1px, -1px) rotate(1deg); }
+            50% { transform: translate(-1px, 2px) rotate(-1deg); }
+            60% { transform: translate(-3px, 1px) rotate(0deg); }
+            70% { transform: translate(2px, 1px) rotate(-1deg); }
+            80% { transform: translate(-1px, -1px) rotate(1deg); }
+            90% { transform: translate(2px, 2px) rotate(0deg); }
+            100% { transform: translate(1px, -2px) rotate(-1deg); }
+        }
+
+        .screen-shake {
+            animation: shake 0.15s infinite;
+        }
+
+        /* Thanh điều khiển trên đỉnh góc trên */
+        .utility-bar {
+            position: absolute;
+            top: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 30;
+            display: flex;
+            gap: 8px;
+            pointer-events: auto;
+        }
+
+        .utility-btn {
+            background: rgba(30, 41, 59, 0.85);
+            border: 1px solid #334155;
+            padding: 6px 14px;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            color: #cbd5e1;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.15s ease;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+        }
+
+        .utility-btn:hover {
+            background: rgba(51, 65, 85, 0.9);
+            color: #f8fafc;
+            border-color: #475569;
+        }
+
+        /* GEMINI CHAT STYLES */
+        #gemini-chat-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #1d4ed8, #8b5cf6);
+            border: 2px solid #cbd5e1;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 100;
+            transition: transform 0.2s;
+        }
+        #gemini-chat-btn:hover {
+            transform: scale(1.1);
+        }
+        #gemini-chat-btn svg {
+            width: 35px;
+            height: 35px;
+            fill: white;
+        }
+
+        #gemini-chat-panel {
+            position: fixed;
+            bottom: 90px;
+            right: 20px;
+            width: 350px;
+            height: 450px;
+            background: rgba(15, 23, 42, 0.95);
+            border: 1px solid #334155;
+            border-radius: 12px;
+            display: none;
+            flex-direction: column;
+            z-index: 100;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.8);
+            overflow: hidden;
+            backdrop-filter: blur(10px);
+            font-family: 'Inter', sans-serif;
+            pointer-events: auto; /* Ensure panel is clickable when in game */
+        }
+
+        #gemini-chat-panel.active {
+            display: flex;
+        }
+
+        .chat-header {
+            padding: 15px;
+            background: rgba(30, 41, 59, 0.9);
+            border-bottom: 1px solid #334155;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: bold;
+            font-size: 1rem;
+        }
+
+        .chat-header-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .chat-btn-small {
+            background: transparent;
+            border: none;
+            color: #cbd5e1;
+            cursor: pointer;
+            font-size: 1.1rem;
+            transition: color 0.2s;
+            padding: 0;
+            display: flex;
+            align-items: center;
+        }
+        .chat-btn-small:hover { color: #fff; }
+
+        #gemini-settings-panel {
+            padding: 15px;
+            background: #1e293b;
+            border-bottom: 1px solid #334155;
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+        }
+        #gemini-settings-panel.active { display: flex; }
+
+        #gemini-settings-panel input {
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #475569;
+            background: #0f172a;
+            color: white;
+            font-size: 0.85rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        #gemini-settings-panel button {
+            padding: 8px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: background 0.2s;
+        }
+        #gemini-settings-panel button:hover { background: #2563eb; }
+
+        #gemini-chat-history {
+            flex-grow: 1;
+            padding: 15px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            font-size: 0.85rem;
+        }
+
+        .chat-msg {
+            max-width: 85%;
+            padding: 10px 12px;
+            border-radius: 8px;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+        .chat-msg.user {
+            background: #3b82f6;
+            align-self: flex-end;
+            border-bottom-right-radius: 2px;
+        }
+        .chat-msg.bot {
+            background: #334155;
+            align-self: flex-start;
+            border-bottom-left-radius: 2px;
+        }
+
+        .chat-input-area {
+            padding: 12px 15px;
+            border-top: 1px solid #334155;
+            display: flex;
+            gap: 10px;
+            background: rgba(30, 41, 59, 0.9);
+        }
+
+        .chat-input-area input {
+            flex-grow: 1;
+            padding: 10px 15px;
+            border-radius: 20px;
+            border: 1px solid #475569;
+            background: #0f172a;
+            color: white;
+            outline: none;
+            font-size: 0.85rem;
+        }
+        .chat-input-area input:focus { border-color: #3b82f6; }
+
+        .chat-input-area button {
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            flex-shrink: 0;
+        }
+        .chat-input-area button:hover { background: #059669; }
+        .chat-input-area button:active { transform: scale(0.95); }
+
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <!-- Header giới thiệu (Sẽ ẩn đi hoàn toàn khi chơi game) -->
+    <div id="game-header" class="mb-4 text-center select-none pointer-events-none transition-all duration-300">
+        <h1 class="text-3xl md:text-4xl font-black bg-clip-text text-transparent bg-gradient-to-r from-green-400 via-blue-500 to-purple-600 tracking-wider">SURVIVAL TAG</h1>
+        <p class="text-slate-500 text-xs mt-1 uppercase tracking-widest font-semibold">Ultimate Multi-Weapon AI Arena</p>
+    </div>
+
+    <div id="game-container">
+        <!-- Thanh điều khiển tiện ích đỉnh game -->
+        <div class="utility-bar">
+            <button id="audio-toggle" class="utility-btn">🔊 Sound On</button>
+            <button id="controls-toggle" class="utility-btn">📱 Touch UI: Auto</button>
+            <button id="fullscreen-btn" class="utility-btn">🖥️ Fullscreen</button>
+        </div>
+        
+        <canvas id="gameCanvas"></canvas>
+        
+        <!-- UI Overlay Bars -->
+        <div id="ui-layer">
+            <div class="health-bar-container">
+                <div class="health-label text-green-400 flex items-center gap-2">
+                    <span class="inline-block w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
+                    HERO (Green)
+                </div>
+                <div class="health-dots" id="player-health"></div>
+                <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Weapon CD: <span id="player-cd-text" class="text-green-400 font-bold">Ready</span></div>
+            </div>
+
+            <div class="health-bar-container items-end">
+                <div class="health-label text-red-400 flex items-center gap-2">
+                    BOT DEMON (Red)
+                    <span class="inline-block w-2.5 h-2.5 rounded-full bg-red-500 animate-ping"></span>
+                </div>
+                <div class="health-dots" id="bot-health"></div>
+                <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Bot CD: <span id="bot-cd-text" class="text-red-400 font-bold">Ready</span></div>
+            </div>
+        </div>
+
+        <!-- Touch Controls (Phím ảo cảm ứng dành cho Mobile) -->
+        <div id="mobile-controls">
+            <div class="joystick-area" id="joystick-boundary">
+                <div class="joystick-stick" id="joystick-knob"></div>
+            </div>
+            
+            <div class="mobile-btn-container">
+                <div class="flex gap-4">
+                    <button class="action-circle-btn active" id="btn-weapon-1">⚔️</button>
+                    <button class="action-circle-btn" id="btn-weapon-2">🍎</button>
+                    <button class="action-circle-btn" id="btn-weapon-3">🛡️</button>
+                </div>
+                <button class="action-circle-btn self-end w-20 h-20" id="action-slash">💥</button>
+            </div>
+        </div>
+
+        <!-- Center Controls Hint (Responsive visibility) -->
+        <div id="controls-hint" class="hidden md:block absolute bottom-4 left-1/2 -translate-x-1/2 text-slate-500 text-xs text-center pointer-events-none select-none uppercase tracking-wider leading-relaxed">
+            Move: <b class="text-slate-300">W A S D / Arrows</b> | Aim: <b class="text-slate-300">Mouse</b> | Attack/Eat: <b class="text-slate-300">L-Click / Space</b><br>
+            Hotkeys: <span class="text-emerald-400 font-bold">[1] Sword</span> | <span class="text-red-400 font-bold">[2] Apple (Hold -> Click to Eat)</span> | <span class="text-blue-400 font-bold">[3] Shield</span>
+        </div>
+
+        <!-- Main Screen States -->
+        <div id="screen-overlay" class="overlay visible">
+            <h1 id="overlay-title" class="text-4xl md:text-6xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500 tracking-tighter mb-4">READY TO FIGHT?</h1>
+            <div id="overlay-desc" class="text-slate-300 text-sm md:text-base max-w-lg text-center leading-relaxed mb-8 bg-slate-950/80 p-6 rounded-xl border border-slate-800">
+                You are the <b class="text-green-400">Green Hero</b>. Move fast and strike hard.<br>
+                <span class="text-red-400 font-bold">Bot Demon</span> runs blazing fast and slashes insanely fast every <span class="font-bold">0.18s!</span><br><br>
+                <span class="text-white font-bold">TACTICAL SETUP:</span><br>
+                🛡️ <b>Shield (3):</b> Blocks damage perfectly from front cone (180°).<br>
+                🍎 <b>Apple (2):</b> Eat to gain +1 HP instantly. (Switches to shield after consumption).<br>
+                ⚔️ <b>Sword (1):</b> Long range reach, causes knockback on hit!
+            </div>
+            <button id="start-btn" class="btn">ENTER ARENA</button>
+        </div>
+    </div>
+
+    <!-- Gemini Chat UI -->
+    <button id="gemini-chat-btn" title="Chat with Gemini">
+        <!-- Gemini spark icon SVG -->
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M19 2.5L17.85 5.1L15.25 6.25L17.85 7.4L19 10L20.15 7.4L22.75 6.25L20.15 5.1L19 2.5ZM19 14L17.85 16.6L15.25 17.75L17.85 18.9L19 21.5L20.15 18.9L22.75 17.75L20.15 16.6L19 14ZM8.5 4L5.7 10.15L-0.5 13L5.7 15.85L8.5 22L11.3 15.85L17.5 13L11.3 10.15L8.5 4Z"/>
+        </svg>
+    </button>
+
+    <div id="gemini-chat-panel">
+        <div class="chat-header">
+            <span>✨ Gemini Assistant</span>
+            <div class="chat-header-actions">
+                <button id="gemini-settings-toggle" class="chat-btn-small" title="Settings">⚙️</button>
+                <button id="gemini-close-btn" class="chat-btn-small" title="Close">❌</button>
+            </div>
+        </div>
+        
+        <div id="gemini-settings-panel">
+            <label class="text-xs text-slate-400 font-semibold uppercase tracking-wider">Gemini 2.5 API Key</label>
+            <input type="password" id="gemini-api-key" placeholder="Enter API Key here..." />
+            <button id="gemini-save-key-btn">Save Key</button>
+        </div>
+
+        <div id="gemini-chat-history">
+            <div class="chat-msg bot">Hi! I'm Gemini. Set your API key in settings (⚙️) to start chatting.</div>
+        </div>
+
+        <div class="chat-input-area">
+            <input type="text" id="gemini-chat-input" placeholder="Type a message..." />
+            <button id="gemini-send-btn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- Web Audio API Synth Engine ---
+        let audioCtx = null;
+        let soundEnabled = true;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        const audioToggleBtn = document.getElementById('audio-toggle');
+        audioToggleBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            soundEnabled = !soundEnabled;
+            audioToggleBtn.textContent = soundEnabled ? "🔊 Sound On" : "🔇 Sound Muted";
+            if(soundEnabled) initAudio();
+        });
+
+        function playSound(type) {
+            if (!soundEnabled) return;
+            try {
+                initAudio();
+                const now = audioCtx.currentTime;
+                
+                switch(type) {
+                    case 'slash': {
+                        const osc = audioCtx.createOscillator();
+                        const gain = audioCtx.createGain();
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(800, now);
+                        osc.frequency.exponentialRampToValueAtTime(150, now + 0.15);
+                        
+                        gain.gain.setValueAtTime(0.3, now);
+                        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+                        
+                        osc.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        osc.start(now);
+                        osc.stop(now + 0.16);
+                        break;
+                    }
+                    case 'hit': {
+                        const osc = audioCtx.createOscillator();
+                        const gain = audioCtx.createGain();
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(180, now);
+                        osc.frequency.linearRampToValueAtTime(40, now + 0.1);
+                        
+                        gain.gain.setValueAtTime(0.4, now);
+                        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+                        
+                        osc.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        osc.start(now);
+                        osc.stop(now + 0.2);
+                        break;
+                    }
+                    case 'shield': {
+                        const osc = audioCtx.createOscillator();
+                        const gain = audioCtx.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(1200, now);
+                        osc.frequency.exponentialRampToValueAtTime(600, now + 0.1);
+                        
+                        gain.gain.setValueAtTime(0.2, now);
+                        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+                        
+                        osc.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        osc.start(now);
+                        osc.stop(now + 0.26);
+                        break;
+                    }
+                    case 'eat': {
+                        const osc = audioCtx.createOscillator();
+                        const gain = audioCtx.createGain();
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(300, now);
+                        osc.frequency.setValueAtTime(600, now + 0.05);
+                        osc.frequency.setValueAtTime(900, now + 0.1);
+                        
+                        gain.gain.setValueAtTime(0.25, now);
+                        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+                        
+                        osc.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        osc.start(now);
+                        osc.stop(now + 0.16);
+                        break;
+                    }
+                    case 'clash': {
+                        // Âm thanh hai thanh kiếm chạm nhau đanh và vang dội
+                        const osc = audioCtx.createOscillator();
+                        const gain = audioCtx.createGain();
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(1500, now);
+                        osc.frequency.exponentialRampToValueAtTime(300, now + 0.2);
+                        
+                        gain.gain.setValueAtTime(0.35, now);
+                        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+                        
+                        osc.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        osc.start(now);
+                        osc.stop(now + 0.26);
+                        break;
+                    }
+                    case 'boss_roar': {
+                        const osc = audioCtx.createOscillator();
+                        const gain = audioCtx.createGain();
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(90, now);
+                        osc.frequency.linearRampToValueAtTime(50, now + 0.4);
+                        
+                        gain.gain.setValueAtTime(0.5, now);
+                        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+                        
+                        osc.connect(gain);
+                        gain.connect(audioCtx.destination);
+                        osc.start(now);
+                        osc.stop(now + 0.5);
+                        break;
+                    }
+                }
+            } catch(e) {
+                console.warn("Audio Context waiting for user gesture");
+            }
+        }
+
+        // --- Setup Canvas and System Variables ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('game-container');
+        const overlay = document.getElementById('screen-overlay');
+        const overlayTitle = document.getElementById('overlay-title');
+        const overlayDesc = document.getElementById('overlay-desc');
+        const startBtn = document.getElementById('start-btn');
+        const mobileControls = document.getElementById('mobile-controls');
+        const gameHeader = document.getElementById('game-header');
+        const controlsToggleBtn = document.getElementById('controls-toggle');
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+
+        // UI Cooldown Elements
+        const playerCdText = document.getElementById('player-cd-text');
+        const botCdText = document.getElementById('bot-cd-text');
+
+        // Scale System
+        const GAME_WIDTH = 800;
+        const GAME_HEIGHT = 600;
+        let systemScale = 1;
+        let touchUiMode = 'auto'; // 'auto', 'on', 'off'
+
+        // Quản lý hiển thị nút bấm ảo cảm ứng
+        function updateControlsVisibility() {
+            const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+            const showControls = (touchUiMode === 'on') || (touchUiMode === 'auto' && (isTouch || window.innerWidth < 1024));
+            
+            if (showControls) {
+                mobileControls.style.display = 'flex';
+            } else {
+                mobileControls.style.display = 'none';
+            }
+        }
+
+        // Đổi chế độ phím ảo bằng nút bấm tiện ích
+        controlsToggleBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (touchUiMode === 'auto') {
+                touchUiMode = 'off';
+                controlsToggleBtn.textContent = "📱 Touch UI: Off";
+            } else if (touchUiMode === 'off') {
+                touchUiMode = 'on';
+                controlsToggleBtn.textContent = "📱 Touch UI: On";
+            } else {
+                touchUiMode = 'auto';
+                controlsToggleBtn.textContent = "📱 Touch UI: Auto";
+            }
+            resizeCanvas();
+        });
+
+        // Xử lý nút Fullscreen với giải pháp Hybrid (Native + Pseudo Fallback cho iFrame)
+        fullscreenBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            initAudio(); 
+            
+            const togglePseudoFullscreen = () => {
+                container.classList.toggle('pseudo-fullscreen');
+                if (container.classList.contains('pseudo-fullscreen')) {
+                    fullscreenBtn.textContent = "🖥️ Thoát Fullscreen";
+                } else {
+                    fullscreenBtn.textContent = "🖥️ Fullscreen";
+                }
+                resizeCanvas();
+            };
+
+            // Nếu trình duyệt hỗ trợ Native Fullscreen và KHÔNG BỊ CHẶN bởi iframe
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen()
+                .then(() => {
+                    // Nếu kích hoạt thành công native, ta đồng bộ thêm class pseudo để căng tràn khung container
+                    container.classList.add('pseudo-fullscreen');
+                    resizeCanvas();
+                })
+                .catch(err => {
+                    // Bị chặn quyền iFrame (Rất phổ biến trong môi trường test/sandbox) -> kích hoạt giả lập chiếm 100% viewport!
+                    console.warn("Native Fullscreen bị chặn, tự động kích hoạt chế độ Giả Lập Fullscreen: ", err.message);
+                    togglePseudoFullscreen();
+                });
+            } else {
+                document.exitFullscreen()
+                .then(() => {
+                    container.classList.remove('pseudo-fullscreen');
+                    resizeCanvas();
+                })
+                .catch(() => {
+                    togglePseudoFullscreen();
+                });
+            }
+        });
+
+        // Theo dõi thay đổi trạng thái Native Fullscreen (Nếu người dùng bấm nút ESC)
+        document.addEventListener('fullscreenchange', () => {
+            if (!document.fullscreenElement) {
+                container.classList.remove('pseudo-fullscreen');
+                fullscreenBtn.textContent = "🖥️TO MẮT";
+            } else {
+                container.classList.add('pseudo-fullscreen');
+                fullscreenBtn.textContent = "🖥️ THÔI ĐI";
+            }
+            setTimeout(resizeCanvas, 100);
+        });
+
+        function resizeCanvas() {
+            const isPlaying = document.body.classList.contains('playing');
+            const isFull = document.fullscreenElement || container.classList.contains('pseudo-fullscreen');
+            
+            // Nếu ở chế độ Fullscreen thực hoặc giả lập, canvas sẽ chiếm trọn 100% kích thước cửa sổ hiện tại
+            const windowWidth = isFull ? window.innerWidth : (isPlaying ? window.innerWidth * 0.98 : window.innerWidth * 0.95);
+            const windowHeight = isFull ? window.innerHeight : (isPlaying ? window.innerHeight * 0.98 : window.innerHeight * 0.85);
+            
+            systemScale = Math.min(windowWidth / GAME_WIDTH, windowHeight / GAME_HEIGHT);
+            
+            canvas.width = GAME_WIDTH;
+            canvas.height = GAME_HEIGHT;
+            
+            container.style.width = `${GAME_WIDTH * systemScale}px`;
+            container.style.height = `${GAME_HEIGHT * systemScale}px`;
+            
+            canvas.style.transformOrigin = '0 0';
+            canvas.style.transform = `scale(${systemScale})`;
+
+            updateControlsVisibility();
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 200));
+
+        // Game Configuration
+        const MAX_HP = 10;
+        const BOT_MAX_HP = 10; 
+        const BOT_BASE_SPEED = 2.1;
+        const PLAYER_SPEED = 3.6;
+
+        // CẤU HÌNH MAP ĐỘNG (Cho phép AI thay đổi)
+        const mapConfig = {
+            bgColor: '#020617',
+            gridColor: '#0f172a',
+            borderColor: '#1e293b'
+        };
+
+        const BOT_RELOAD_TIME = 180; 
+        const PLAYER_RELOAD_TIME = 450; 
+
+        let gameState = 'START'; 
+        let lastTime = 0;
+        let animationId;
+        let screenShakeAmount = 0;
+
+        // Dynamic State Pools
+        const particles = [];
+        const dustTrails = [];
+        const attackEffects = [];
+
+        const player = {
+            x: GAME_WIDTH / 4,
+            y: GAME_HEIGHT / 2,
+            radius: 16,
+            color: '#10b981', 
+            speed: PLAYER_SPEED,
+            hp: MAX_HP,
+            lastAttackTime: 0,
+            angle: 0,
+            swingProgress: 0,
+            swordLength: 46,
+            reach: 84,
+            activeItem: 'SWORD', 
+            facingX: 1,
+            facingY: 0
+        };
+
+        const bot = {
+            x: GAME_WIDTH * 0.75,
+            y: GAME_HEIGHT / 2,
+            radius: 17,
+            color: '#ef4444', 
+            speed: BOT_BASE_SPEED,
+            hp: BOT_MAX_HP,
+            lastAttackTime: 0,
+            angle: Math.PI,
+            swingProgress: 0,
+            swordLength: 22,
+            reach: 52
+        };
+
+        // Inputs Control Matrix
+        const keys = {
+            w: false, a: false, s: false, d: false,
+            ArrowUp: false, ArrowLeft: false, ArrowDown: false, ArrowRight: false,
+            ' ': false,
+            click: false
+        };
+
+        let mouseX = GAME_WIDTH / 2;
+        let mouseY = GAME_HEIGHT / 2;
+
+        // --- Keyboard Controls ---
+        window.addEventListener('keydown', (e) => {
+            if (keys.hasOwnProperty(e.key) || e.key === ' ') {
+                if(e.key === ' ') { keys[' '] = true; }
+                else { keys[e.key] = true; }
+                
+                if([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                    e.preventDefault();
+                }
+            }
+
+            if (e.key === '1') switchWeapon('SWORD');
+            if (e.key === '2') switchWeapon('APPLE');
+            if (e.key === '3') switchWeapon('SHIELD');
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (keys.hasOwnProperty(e.key) || e.key === ' ') {
+                if(e.key === ' ') { keys[' '] = false; }
+                else { keys[e.key] = false; }
+            }
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = (e.clientX - rect.left) * (canvas.width / rect.width);
+            mouseY = (e.clientY - rect.top) * (canvas.height / rect.height);
+        });
+
+        window.addEventListener('mousedown', (e) => {
+            if (e.button === 0) {
+                initAudio();
+                keys.click = true;
+            }
+        });
+
+        window.addEventListener('mouseup', (e) => {
+            if (e.button === 0) keys.click = false;
+        });
+
+        // --- Touch controls: Virtual Joystick & Buttons ---
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let joystickVector = { x: 0, y: 0 };
+        let activeJoystickTouchId = null;
+
+        const joystickBoundary = document.getElementById('joystick-boundary');
+        const joystickKnob = document.getElementById('joystick-knob');
+
+        joystickBoundary.addEventListener('touchstart', (e) => {
+            initAudio();
+            const touch = e.changedTouches[0];
+            activeJoystickTouchId = touch.identifier;
+            const rect = joystickBoundary.getBoundingClientRect();
+            touchStartX = rect.left + rect.width / 2;
+            touchStartY = rect.top + rect.height / 2;
+        }, { passive: true });
+
+        joystickBoundary.addEventListener('touchmove', (e) => {
+            if (activeJoystickTouchId === null) return;
+            
+            let activeTouch = null;
+            for (let i = 0; i < e.touches.length; i++) {
+                if (e.touches[i].identifier === activeJoystickTouchId) {
+                    activeTouch = e.touches[i];
+                    break;
+                }
+            }
+
+            if (activeTouch) {
+                const limit = 50; 
+                let dx = activeTouch.clientX - touchStartX;
+                let dy = activeTouch.clientY - touchStartY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance > limit) {
+                    dx = (dx / distance) * limit;
+                    dy = (dy / distance) * limit;
+                }
+
+                joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+                
+                joystickVector.x = dx / limit;
+                joystickVector.y = dy / limit;
+            }
+        }, { passive: true });
+
+        const endJoystickTouch = (e) => {
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                if (e.changedTouches[i].identifier === activeJoystickTouchId) {
+                    activeJoystickTouchId = null;
+                    joystickKnob.style.transform = `translate(0px, 0px)`;
+                    joystickVector = { x: 0, y: 0 };
+                    break;
+                }
+            }
+        };
+
+        joystickBoundary.addEventListener('touchend', endJoystickTouch);
+        joystickBoundary.addEventListener('touchcancel', endJoystickTouch);
+
+        // Weapon Selector Buttons Touch Handler
+        function updateMobileWeaponUI() {
+            document.querySelectorAll('.mobile-btn-container button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            if (player.activeItem === 'SWORD') document.getElementById('btn-weapon-1').classList.add('active');
+            if (player.activeItem === 'APPLE') document.getElementById('btn-weapon-2').classList.add('active');
+            if (player.activeItem === 'SHIELD') document.getElementById('btn-weapon-3').classList.add('active');
+        }
+
+        function switchWeapon(type) {
+            player.activeItem = type;
+            updateMobileWeaponUI();
+        }
+
+        document.getElementById('btn-weapon-1').addEventListener('touchstart', (e) => { e.preventDefault(); switchWeapon('SWORD'); });
+        document.getElementById('btn-weapon-2').addEventListener('touchstart', (e) => { e.preventDefault(); switchWeapon('APPLE'); });
+        document.getElementById('btn-weapon-3').addEventListener('touchstart', (e) => { e.preventDefault(); switchWeapon('SHIELD'); });
+
+        const touchSlashBtn = document.getElementById('action-slash');
+        touchSlashBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            keys.click = true;
+        });
+        touchSlashBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            keys.click = false;
+        });
+
+        // --- Particle & Trail FX Engines ---
+        function createParticle(x, y, color, speedScale = 1) {
+            const count = 12;
+            for(let i=0; i<count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = (Math.random() * 4 + 2) * speedScale;
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    radius: Math.random() * 3 + 2,
+                    color: color,
+                    alpha: 1,
+                    life: Math.random() * 20 + 20
+                });
+            }
+        }
+
+        function createDustTrail(x, y) {
+            if (Math.random() < 0.25) {
+                dustTrails.push({
+                    x: x,
+                    y: y + 10,
+                    radius: Math.random() * 4 + 2,
+                    alpha: 0.5,
+                    life: 25
+                });
+            }
+        }
+
+        function createAttackEffect(x, y, color, maxRadius) {
+            attackEffects.push({
+                x: x,
+                y: y,
+                radius: 12,
+                maxRadius: maxRadius,
+                color: color,
+                alpha: 0.9,
+                life: 0
+            });
+        }
+
+        function updateFX(deltaTime) {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.alpha -= 0.025;
+                p.life -= deltaTime / 16;
+                if (p.alpha <= 0 || p.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+
+            for (let i = dustTrails.length - 1; i >= 0; i--) {
+                const d = dustTrails[i];
+                d.radius += 0.15;
+                d.alpha -= 0.02;
+                d.life -= deltaTime / 16;
+                if (d.alpha <= 0 || d.life <= 0) {
+                    dustTrails.splice(i, 1);
+                }
+            }
+
+            if (screenShakeAmount > 0) {
+                screenShakeAmount -= 0.5;
+                if (screenShakeAmount < 0) screenShakeAmount = 0;
+            }
+        }
+
+        function triggerScreenShake(amt) {
+            screenShakeAmount = amt;
+            container.classList.add('screen-shake');
+            setTimeout(() => {
+                container.classList.remove('screen-shake');
+            }, 150);
+        }
+
+        // --- Core Setup & Game Initialization ---
+        function initGame() {
+            playSound('boss_roar');
+            player.x = GAME_WIDTH / 4;
+            player.y = GAME_HEIGHT / 2;
+            player.hp = MAX_HP;
+            player.lastAttackTime = performance.now() - PLAYER_RELOAD_TIME;
+            
+            bot.x = GAME_WIDTH * 0.75;
+            bot.y = GAME_HEIGHT / 2;
+            bot.hp = BOT_MAX_HP;
+            bot.lastAttackTime = performance.now() - 500; 
+
+            particles.length = 0;
+            dustTrails.length = 0;
+            attackEffects.length = 0;
+
+            updateUI();
+            
+            gameState = 'PLAYING';
+            overlay.classList.remove('visible');
+            overlay.style.pointerEvents = 'none';
+
+            // Ẩn tiêu đề giới thiệu & kích hoạt tối ưu hóa full screen chơi game
+            gameHeader.style.opacity = '0';
+            setTimeout(() => {
+                gameHeader.style.display = 'none';
+            }, 300);
+            document.body.classList.add('playing');
+            resizeCanvas();
+            
+            lastTime = performance.now();
+            cancelAnimationFrame(animationId);
+            gameLoop(lastTime);
+        }
+
+        function updateUI() {
+            const pHealthContainer = document.getElementById('player-health');
+            pHealthContainer.innerHTML = '';
+            const playerMaxDots = Math.max(MAX_HP, player.hp);
+            for (let i = 0; i < playerMaxDots; i++) {
+                if (i < player.hp) {
+                    pHealthContainer.innerHTML += '<div class="health-dot active-player"></div>';
+                } else {
+                    pHealthContainer.innerHTML += '<div class="health-dot"></div>';
+                }
+            }
+
+            const bHealthContainer = document.getElementById('bot-health');
+            bHealthContainer.innerHTML = '';
+            for (let i = 0; i < BOT_MAX_HP; i++) {
+                if (i < bot.hp) {
+                    bHealthContainer.innerHTML += '<div class="health-dot active-bot"></div>';
+                } else {
+                    bHealthContainer.innerHTML += '<div class="health-dot"></div>';
+                }
+            }
+        }
+
+        // --- Game Tick Engines ---
+        function update(deltaTime, currentTime) {
+            if (gameState !== 'PLAYING') return;
+
+            let dx = 0;
+            let dy = 0;
+
+            if (keys.w || keys.ArrowUp) dy -= 1;
+            if (keys.s || keys.ArrowDown) dy += 1;
+            if (keys.a || keys.ArrowLeft) dx -= 1;
+            if (keys.d || keys.ArrowRight) dx += 1;
+
+            if (joystickVector.x !== 0 || joystickVector.y !== 0) {
+                dx = joystickVector.x;
+                dy = joystickVector.y;
+            }
+
+            if (dx !== 0 && dy !== 0 && (joystickVector.x === 0 && joystickVector.y === 0)) {
+                const len = Math.sqrt(dx * dx + dy * dy);
+                dx /= len;
+                dy /= len;
+            }
+
+            const stepX = dx * player.speed;
+            const stepY = dy * player.speed;
+
+            player.x += stepX;
+            player.y += stepY;
+
+            if (Math.abs(stepX) > 0.5 || Math.abs(stepY) > 0.5) {
+                createDustTrail(player.x, player.y);
+            }
+
+            // --- KHÓA CHẶT ĐƯỜNG BIÊN BẮT BUỘC (Tính toán đến độ rộng viền 12px và bán kính thực của Hero) ---
+            const minBoundaryX = player.radius + 12;
+            const maxBoundaryX = GAME_WIDTH - player.radius - 12;
+            const minBoundaryY = player.radius + 12;
+            const maxBoundaryY = GAME_HEIGHT - player.radius - 12;
+
+            player.x = Math.max(minBoundaryX, Math.min(maxBoundaryX, player.x));
+            player.y = Math.max(minBoundaryY, Math.min(maxBoundaryY, player.y));
+
+            const isUsingTouch = joystickVector.x !== 0 || joystickVector.y !== 0;
+            if (isUsingTouch) {
+                player.angle = Math.atan2(bot.y - player.y, bot.x - player.x);
+            } else {
+                player.angle = Math.atan2(mouseY - player.y, mouseX - player.x);
+            }
+
+            player.facingX = Math.cos(player.angle);
+            player.facingY = Math.sin(player.angle);
+
+            // --- Intelligent Bot AI Engine ---
+            const botToPlayerX = player.x - bot.x;
+            const botToPlayerY = player.y - bot.y;
+            const distance = Math.sqrt(botToPlayerX * botToPlayerX + botToPlayerY * botToPlayerY);
+
+            if (distance > 0) {
+                let finalSpeed = bot.speed;
+                if (distance > 300) finalSpeed *= 1.35; 
+                
+                bot.x += (botToPlayerX / distance) * finalSpeed;
+                bot.y += (botToPlayerY / distance) * finalSpeed;
+
+                bot.angle = Math.atan2(botToPlayerY, botToPlayerX);
+            }
+
+            // --- KHÓA CHẶT ĐƯỜNG BIÊN CHO BOT (Không cho phép Bot trượt ra ngoài ranh giới đấu trường) ---
+            const botMinBoundaryX = bot.radius + 12;
+            const botMaxBoundaryX = GAME_WIDTH - bot.radius - 12;
+            const botMinBoundaryY = bot.radius + 12;
+            const botMaxBoundaryY = GAME_HEIGHT - bot.radius - 12;
+
+            bot.x = Math.max(botMinBoundaryX, Math.min(botMaxBoundaryX, bot.x));
+            bot.y = Math.max(botMinBoundaryY, Math.min(botMaxBoundaryY, bot.y));
+
+            // --- THẮT CHẶT VẬT LÝ: KHÔNG CHO PHÉP 2 ĐỐI TƯỢNG ĐÈ LÊN NHAU (Anti-overlapping) ---
+            const minCollisionDist = player.radius + bot.radius;
+            const currentDist = Math.sqrt((player.x - bot.x) ** 2 + (player.y - bot.y) ** 2);
+            
+            if (currentDist < minCollisionDist && currentDist > 0) {
+                // Xác định hướng đẩy xa nhau dựa trên vector tâm giữa hai đối tượng
+                const overlap = minCollisionDist - currentDist;
+                const pushX = ((player.x - bot.x) / currentDist) * (overlap / 2);
+                const pushY = ((player.y - bot.y) / currentDist) * (overlap / 2);
+
+                // Đẩy Hero và Bot ra hai hướng ngược nhau để giải phóng sự chồng lấp
+                player.x += pushX;
+                player.y += pushY;
+                bot.x -= pushX;
+                bot.y -= pushY;
+
+                // Tái áp dụng khóa biên ngay sau khi đẩy để chống lọt viền map
+                player.x = Math.max(minBoundaryX, Math.min(maxBoundaryX, player.x));
+                player.y = Math.max(minBoundaryY, Math.min(maxBoundaryY, player.y));
+                bot.x = Math.max(botMinBoundaryX, Math.min(botMaxBoundaryX, bot.x));
+                bot.y = Math.max(botMinBoundaryY, Math.min(botMaxBoundaryY, bot.y));
+            }
+
+            if (player.swingProgress > 0) {
+                player.swingProgress -= deltaTime / 130; 
+                if (player.swingProgress < 0) player.swingProgress = 0;
+            }
+            if (bot.swingProgress > 0) {
+                bot.swingProgress -= deltaTime / 110;
+                if (bot.swingProgress < 0) bot.swingProgress = 0;
+            }
+
+            const playerTimeSinceAttack = currentTime - player.lastAttackTime;
+            if (player.activeItem === 'SHIELD') {
+                playerCdText.textContent = "KHIÊN MỞ RỒI";
+                playerCdText.style.color = "#3b82f6";
+            } else if (player.activeItem === 'APPLE') {
+                playerCdText.textContent = "EAT APPPLE";
+                playerCdText.style.color = "#ef4444";
+            } else if (playerTimeSinceAttack >= PLAYER_RELOAD_TIME) {
+                playerCdText.textContent = "ĐI NÀO";
+                playerCdText.style.color = "#10b981";
+            } else {
+                const remaining = ((PLAYER_RELOAD_TIME - playerTimeSinceAttack) / 1000).toFixed(2);
+                playerCdText.textContent = `${remaining}s`;
+                playerCdText.style.color = "#64748b";
+            }
+
+            const botTimeSinceAttack = currentTime - bot.lastAttackTime;
+            if (botTimeSinceAttack >= BOT_RELOAD_TIME) {
+                botCdText.textContent = "ĐI THÔI";
+                botCdText.style.color = "#ef4444";
+            } else {
+                const remaining = ((BOT_RELOAD_TIME - botTimeSinceAttack) / 1000).toFixed(2);
+                botCdText.textContent = `${remaining}s`;
+                botCdText.style.color = "#64748b";
+            }
+
+            // Khoảng cách thực tế phục vụ cho việc kiểm tra tầm đánh
+            const updatedDist = Math.sqrt((player.x - bot.x) ** 2 + (player.y - bot.y) ** 2);
+            const playerInRange = updatedDist <= player.reach;
+            const botInRange = updatedDist <= bot.reach;
+
+            // Kiểm tra trạng thái vung kiếm đồng thời để chuẩn bị kích hoạt cơ chế gạt kiếm
+            const playerAttemptingAttack = (keys[' '] || keys.click) && player.activeItem === 'SWORD' && playerTimeSinceAttack >= PLAYER_RELOAD_TIME;
+            const botAttemptingAttack = botInRange && botTimeSinceAttack >= BOT_RELOAD_TIME;
+
+            // --- CƠ CHẾ KIẾM CHẠM NHAU ĐẨY LÙI (Sword Clash Knockback) ---
+            if (playerAttemptingAttack && botAttemptingAttack) {
+                // Xác định xem góc vung kiếm của cả hai có đang đối diện nhau không
+                let angleBetween = Math.abs(player.angle - bot.angle);
+                if (angleBetween > Math.PI) angleBetween = 2 * Math.PI - angleBetween;
+
+                // Nếu góc chênh lệch xấp xỉ đối đầu (lớn hơn 120 độ) và cả hai trong phạm vi tấn công tương tác kiếm
+                if (angleBetween >= Math.PI / 1.5 && updatedDist <= (player.reach + bot.reach) * 0.85) {
+                    // Tiêu hao đòn vung của cả hai bên nhưng chặn sát thương hoàn toàn!
+                    player.lastAttackTime = currentTime;
+                    bot.lastAttackTime = currentTime;
+                    player.swingProgress = 1;
+                    bot.swingProgress = 1;
+
+                    // Phát âm thanh va chạm kiếm sắc bén
+                    playSound('clash');
+                    triggerScreenShake(15); // Rung lắc cực mạnh
+
+                    // Tạo luồng bụi và tia sáng vàng lấp lánh tại điểm trung gian giữa hai đối thủ
+                    const midX = (player.x + bot.x) / 2;
+                    const midY = (player.y + bot.y) / 2;
+                    createAttackEffect(midX, midY, '#fbbf24', 60); // Vòng sóng xung kích màu vàng kim
+                    createParticle(midX, midY, '#f59e0b', 2.0); // Bụi hạt lửa
+                    createParticle(midX, midY, '#ffffff', 1.5);
+
+                    // Đẩy lùi cực mạnh cả hai bên ra xa nhau ngay lập tức (Knockback dữ dội)
+                    const pushForce = 75; 
+                    const dirX = botToPlayerX / updatedDist;
+                    const dirY = botToPlayerY / updatedDist;
+
+                    player.x += dirX * pushForce;
+                    player.y += dirY * pushForce;
+                    bot.x -= dirX * pushForce;
+                    bot.y -= dirY * pushForce;
+
+                    // Giữ hai bên không văng ngoài ranh giới bản đồ
+                    player.x = Math.max(minBoundaryX, Math.min(maxBoundaryX, player.x));
+                    player.y = Math.max(minBoundaryY, Math.min(maxBoundaryY, player.y));
+                    bot.x = Math.max(botMinBoundaryX, Math.min(botMaxBoundaryX, bot.x));
+                    bot.y = Math.max(botMinBoundaryY, Math.min(botMaxBoundaryY, bot.y));
+
+                    // Reset phím click để tránh lặp đòn ngay lập tức
+                    keys.click = false;
+                    keys[' '] = false;
+
+                    // Bỏ qua hoàn tất xử lý sát thương thông thường bên dưới trong tick này
+                    updateFX(deltaTime);
+                    return;
+                }
+            }
+
+            // Xử lý sát thương thông thường của Player nếu không bị đụng kiếm
+            if (keys[' '] || keys.click) {
+                if (player.activeItem === 'APPLE') {
+                    playSound('eat');
+                    player.hp += 1;
+                    createParticle(player.x, player.y, '#f43f5e', 0.8);
+                    player.activeItem = 'SHIELD'; 
+                    updateMobileWeaponUI();
+                    updateUI();
+                    keys.click = false;
+                    keys[' '] = false;
+                } else if (playerTimeSinceAttack >= PLAYER_RELOAD_TIME && player.activeItem === 'SWORD') {
+                    player.lastAttackTime = currentTime;
+                    player.swingProgress = 1;
+                    playSound('slash');
+                    createAttackEffect(player.x, player.y, '#34d399', player.reach);
+
+                    let targetAngle = Math.atan2(bot.y - player.y, bot.x - player.x);
+                    let angleDiff = Math.abs(targetAngle - player.angle);
+                    if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
+
+                    if (playerInRange && angleDiff < Math.PI / 2.5) {
+                        playSound('hit');
+                        bot.hp -= 1;
+                        triggerScreenShake(4);
+                        createParticle(bot.x, bot.y, '#ef4444', 1.5);
+                        updateUI();
+                        
+                        bot.x -= (botToPlayerX / updatedDist) * 45;
+                        bot.y -= (botToPlayerY / updatedDist) * 45;
+
+                        // Chống lọt lưới cho bot khi bị dính đòn knockback từ rìa map
+                        bot.x = Math.max(botMinBoundaryX, Math.min(botMaxBoundaryX, bot.x));
+                        bot.y = Math.max(botMinBoundaryY, Math.min(botMaxBoundaryY, bot.y));
+
+                        if (bot.hp <= 0) endGame('PLAYER_WIN');
+                    }
+                    keys.click = false; 
+                }
+            }
+
+            // Xử lý sát thương thông thường của Bot nếu không bị chặn
+            if (botInRange && botTimeSinceAttack >= BOT_RELOAD_TIME) {
+                bot.lastAttackTime = currentTime;
+                bot.swingProgress = 1;
+                playSound('slash');
+                createAttackEffect(bot.x, bot.y, '#f87171', bot.reach);
+
+                let takesDamage = true;
+
+                if (player.activeItem === 'SHIELD') {
+                    let incomingAtkAngle = Math.atan2(bot.y - player.y, bot.x - player.x);
+                    let angleDiff = Math.abs(incomingAtkAngle - player.angle);
+                    if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
+
+                    if (angleDiff <= Math.PI / 1.8) {
+                        takesDamage = false;
+                        playSound('shield');
+                        createParticle(player.x + Math.cos(player.angle) * 20, player.y + Math.sin(player.angle) * 20, '#60a5fa', 1.2);
+                        triggerScreenShake(2);
+                    }
+                }
+
+                if (takesDamage) {
+                    playSound('hit');
+                    player.hp -= 1;
+                    createParticle(player.x, player.y, '#f87171', 1.8);
+                    triggerScreenShake(12);
+                    updateUI();
+                }
+
+                player.x += (botToPlayerX / updatedDist) * 20;
+                player.y += (botToPlayerY / updatedDist) * 20;
+
+                // Đảm bảo sau khi giật lùi vẫn nằm hoàn toàn trong tầm kiểm soát ranh giới map
+                player.x = Math.max(minBoundaryX, Math.min(maxBoundaryX, player.x));
+                player.y = Math.max(minBoundaryY, Math.min(maxBoundaryY, player.y));
+
+                if (player.hp <= 0) endGame('BOT_WIN');
+            }
+
+            updateFX(deltaTime);
+        }
+
+        // --- Premium Visual Drawing Pass ---
+        function drawGrid(ctx) {
+            ctx.strokeStyle = mapConfig.gridColor;
+            ctx.lineWidth = 1;
+            const size = 60;
+            for (let x = 0; x < GAME_WIDTH; x += size) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, GAME_HEIGHT);
+                ctx.stroke();
+            }
+            for (let y = 0; y < GAME_HEIGHT; y += size) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(GAME_WIDTH, y);
+                ctx.stroke();
+            }
+
+            ctx.strokeStyle = mapConfig.borderColor;
+            ctx.lineWidth = 12;
+            ctx.strokeRect(6, 6, GAME_WIDTH - 12, GAME_HEIGHT - 12);
+        }
+
+        function drawEffects(ctx) {
+            ctx.fillStyle = 'rgba(71, 85, 105, 0.25)';
+            for (let i = 0; i < dustTrails.length; i++) {
+                const d = dustTrails[i];
+                ctx.beginPath();
+                ctx.arc(d.x, d.y, d.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            for (let i = attackEffects.length - 1; i >= 0; i--) {
+                const wave = attackEffects[i];
+                ctx.beginPath();
+                ctx.arc(wave.x, wave.y, wave.radius, 0, Math.PI * 2);
+                ctx.strokeStyle = wave.color;
+                ctx.lineWidth = 4;
+                ctx.globalAlpha = wave.alpha;
+                ctx.stroke();
+
+                wave.radius += 5;
+                wave.alpha -= 0.06;
+                if (wave.alpha <= 0) {
+                    attackEffects.splice(i, 1);
+                }
+            }
+            ctx.globalAlpha = 1.0;
+
+            for (let i = 0; i < particles.length; i++) {
+                const p = particles[i];
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = p.alpha;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1.0;
+        }
+
+        function drawEntity(ctx, ent, isHero) {
+            ctx.beginPath();
+            ctx.arc(ent.x, ent.y + 6, ent.radius - 1, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(2, 6, 23, 0.6)';
+            ctx.fill();
+
+            if (isHero && ent.activeItem === 'SHIELD') {
+                ctx.save();
+                ctx.translate(ent.x, ent.y);
+                ctx.rotate(ent.angle);
+                
+                ctx.beginPath();
+                ctx.arc(0, 0, ent.radius + 12, -Math.PI/2, Math.PI/2);
+                ctx.strokeStyle = '#3b82f6';
+                ctx.lineWidth = 7;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.arc(0, 0, ent.radius + 12, -Math.PI/2, Math.PI/2);
+                ctx.strokeStyle = 'rgba(59, 130, 246, 0.45)';
+                ctx.lineWidth = 15;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+                
+                ctx.restore();
+            } else if (isHero && ent.activeItem === 'APPLE') {
+                ctx.save();
+                ctx.translate(ent.x, ent.y);
+                ctx.rotate(ent.angle);
+                
+                ctx.fillStyle = '#475569';
+                ctx.fillRect(ent.radius - 2, -3, 8, 6);
+
+                ctx.fillStyle = '#f43f5e'; 
+                ctx.beginPath();
+                ctx.arc(ent.radius + 8, 0, 8, 0, Math.PI*2);
+                ctx.fill();
+
+                ctx.fillStyle = '#10b981';
+                ctx.beginPath();
+                ctx.ellipse(ent.radius + 7, -6, 5, 2.5, Math.PI/4, 0, Math.PI*2);
+                ctx.fill();
+
+                ctx.restore();
+            } else {
+                ctx.save();
+                ctx.translate(ent.x, ent.y);
+                let currentAngle = ent.angle;
+                if (ent.swingProgress > 0) {
+                    const swingAngle = Math.PI * 0.9;
+                    const offset = (0.5 - ent.swingProgress) * swingAngle;
+                    currentAngle += offset;
+                }
+                ctx.rotate(currentAngle);
+
+                ctx.fillStyle = '#1e293b';
+                ctx.fillRect(ent.radius - 2, -5, 11, 10);
+                
+                ctx.fillStyle = isHero ? '#34d399' : '#fca5a5';
+                ctx.fillRect(ent.radius + 9, -2.5, ent.swordLength, 5);
+
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(ent.radius + 9, -1, ent.swordLength, 2);
+
+                ctx.restore();
+            }
+
+            ctx.beginPath();
+            ctx.arc(ent.x, ent.y, ent.radius, 0, Math.PI * 2);
+            ctx.fillStyle = ent.color;
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+
+            ctx.save();
+            ctx.translate(ent.x, ent.y);
+            ctx.rotate(ent.angle);
+
+            if (isHero) {
+                ctx.beginPath();
+                ctx.arc(6, -6, 3, 0, Math.PI * 2);
+                ctx.arc(6, 6, 3, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.arc(8, -6, 1.2, 0, Math.PI * 2);
+                ctx.arc(8, 6, 1.2, 0, Math.PI * 2);
+                ctx.fillStyle = '#000000';
+                ctx.fill();
+            } else {
+                ctx.beginPath();
+                ctx.moveTo(3, -8);
+                ctx.lineTo(8, -3);
+                ctx.moveTo(3, 8);
+                ctx.lineTo(8, 3);
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2.5;
+                ctx.stroke();
+            }
+
+            ctx.restore();
+
+            const maxReload = isHero ? PLAYER_RELOAD_TIME : BOT_RELOAD_TIME;
+            const timeSince = performance.now() - ent.lastAttackTime;
+
+            if (timeSince < maxReload) {
+                const percent = timeSince / maxReload;
+                ctx.beginPath();
+                ctx.arc(ent.x, ent.y, ent.radius + 8, -Math.PI/2, (-Math.PI/2) + (Math.PI * 2 * percent));
+                ctx.strokeStyle = 'rgba(148, 163, 184, 0.5)';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            } else {
+                ctx.beginPath();
+                ctx.arc(ent.x, ent.y, ent.radius + 8, 0, Math.PI * 2);
+                ctx.strokeStyle = isHero ? 'rgba(16, 185, 129, 0.5)' : 'rgba(239, 110, 110, 0.5)';
+                ctx.lineWidth = 2.5;
+                ctx.globalAlpha = 0.4 + Math.sin(performance.now() / 120) * 0.4;
+                ctx.stroke();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        function render() {
+            ctx.fillStyle = mapConfig.bgColor;
+            ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+            drawGrid(ctx);
+            drawEffects(ctx);
+            drawEntity(ctx, player, true);
+            drawEntity(ctx, bot, false);
+        }
+
+        function gameLoop(timestamp) {
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+
+            update(deltaTime, timestamp);
+            render();
+
+            if (gameState === 'PLAYING') {
+                animationId = requestAnimationFrame(gameLoop);
+            }
+        }
+
+        function endGame(result) {
+            gameState = 'GAMEOVER';
+            
+            overlay.classList.add('visible');
+            overlay.style.pointerEvents = 'auto';
+            startBtn.textContent = "LÀM LẠI CUỘC ĐỜI NÀO";
+
+            // Khôi phục lại hiển thị của tiêu đề giới thiệu ngoài sảnh chờ
+            gameHeader.style.display = 'block';
+            setTimeout(() => {
+                gameHeader.style.opacity = '1';
+            }, 50);
+            document.body.classList.remove('playing');
+            resizeCanvas();
+
+            if (result === 'PLAYER_WIN') {
+                overlayTitle.textContent = "LỤM KÈO!";
+                overlayTitle.className = "text-5xl md:text-6xl font-black bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-green-500 tracking-tighter mb-4";
+                overlayDesc.innerHTML = "Unbelievable! You sliced down the ruthless Red Bot Demon.<br>You mastered the tactical rotation between the Sword and Shield perfectly!";
+            } else {
+                overlayTitle.textContent = "NGÁO NẶNG!";
+                overlayTitle.className = "text-5xl md:text-6xl font-black bg-clip-text text-transparent bg-gradient-to-r from-red-500 to-rose-700 tracking-tighter mb-4";
+                overlayDesc.innerHTML = "The Red Bot Demon was too easy to be defeated!?<br>Tip: Remember to press <b class='text-blue-400'>[3] to Shield</b> or eat a <b class='text-red-400'>[2] Apple</b> when your HP is low.";
+            }
+        }
+
+        // Setup Init trigger
+        startBtn.addEventListener('click', initGame);
+
+        // Initial setup run
+        resizeCanvas();
+        render();
+
+        // --- GEMINI CHAT INTEGRATION ---
+        const geminiChatBtn = document.getElementById('gemini-chat-btn');
+        const geminiChatPanel = document.getElementById('gemini-chat-panel');
+        const geminiCloseBtn = document.getElementById('gemini-close-btn');
+        const geminiSettingsToggle = document.getElementById('gemini-settings-toggle');
+        const geminiSettingsPanel = document.getElementById('gemini-settings-panel');
+        const geminiApiKeyInput = document.getElementById('gemini-api-key');
+        const geminiSaveKeyBtn = document.getElementById('gemini-save-key-btn');
+        const geminiChatHistory = document.getElementById('gemini-chat-history');
+        const geminiChatInput = document.getElementById('gemini-chat-input');
+        const geminiSendBtn = document.getElementById('gemini-send-btn');
+
+        let geminiApiKey = localStorage.getItem('gemini_api_key') || '';
+        if (geminiApiKey) {
+            geminiApiKeyInput.value = geminiApiKey;
+        }
+
+        let chatHistoryData = [];
+
+        geminiChatBtn.addEventListener('click', () => {
+            geminiChatPanel.classList.toggle('active');
+            if(geminiChatPanel.classList.contains('active')) {
+                geminiChatInput.focus();
+            }
+        });
+
+        geminiCloseBtn.addEventListener('click', () => {
+            geminiChatPanel.classList.remove('active');
+        });
+
+        geminiSettingsToggle.addEventListener('click', () => {
+            geminiSettingsPanel.classList.toggle('active');
+        });
+
+        geminiSaveKeyBtn.addEventListener('click', () => {
+            const key = geminiApiKeyInput.value.trim();
+            geminiApiKey = key;
+            localStorage.setItem('gemini_api_key', key); // Lưu lại token để không phải nhập lại
+            geminiSettingsPanel.classList.remove('active');
+            addChatMessage('System', 'API Key saved successfully.', 'bot');
+        });
+
+        function addChatMessage(sender, text, type) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `chat-msg ${type}`;
+            
+            // Format markdown text cơ bản (In đậm, in nghiêng, ngắt dòng)
+            text = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>'); 
+            text = text.replace(/\*(.*?)\*/g, '<i>$1</i>');     
+            text = text.replace(/\n/g, '<br>');                 
+            
+            msgDiv.innerHTML = text;
+            geminiChatHistory.appendChild(msgDiv);
+            geminiChatHistory.scrollTop = geminiChatHistory.scrollHeight;
+        }
+
+        async function handleGeminiSend() {
+            const text = geminiChatInput.value.trim();
+            if (!text) return;
+
+            if (!geminiApiKey) {
+                addChatMessage('System', 'Please enter your Gemini API Key in settings first.', 'bot');
+                geminiSettingsPanel.classList.add('active');
+                return;
+            }
+
+            addChatMessage('You', text, 'user');
+            geminiChatInput.value = '';
+            
+            geminiChatInput.disabled = true;
+            geminiSendBtn.disabled = true;
+
+            const loadingId = 'loading-' + Date.now();
+            const loadingMsg = document.createElement('div');
+            loadingMsg.id = loadingId;
+            loadingMsg.className = 'chat-msg bot';
+            loadingMsg.innerHTML = '<span class="animate-pulse">Đang dùng pháp thuật thao túng mã nguồn...</span>';
+            geminiChatHistory.appendChild(loadingMsg);
+            geminiChatHistory.scrollTop = geminiChatHistory.scrollHeight;
+
+            // KỸ THUẬT PROMPT ENGINEERING ĐỂ ÉP GEMINI VIẾT CODE
+            const systemInstruction = `
+            You are a Game Modder AI. Your job is to modify a HTML Canvas game dynamically based on the user's request.
+            Translate the user's request into pure JavaScript code.
+            
+            AVAILABLE VARIABLES TO MODIFY:
+            - player: {x, y, radius, color, speed, hp, swordLength, reach}
+            - bot: {x, y, radius, color, speed, hp, swordLength, reach}
+            - mapConfig: {bgColor, gridColor, borderColor} (Use hex or CSS colors)
+            
+            RULES:
+            1. ONLY return valid JavaScript code. NO Markdown formatting, NO \`\`\`javascript tags, NO explanations, NO HTML.
+            2. Just the raw JS instructions to change the properties.
+            3. Example 1: If user says "Make me huge and fast", return: player.radius = 40; player.speed = 10;
+            4. Example 2: If user says "Make map red", return: mapConfig.bgColor = '#ff0000';
+            
+            User's request: "${text}"
+            `;
+
+            try {
+                // Gọi tới model Gemini 2.5 Flash
+                const modelName = 'gemini-2.5-flash';
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${geminiApiKey}`;
+
+                // Chỉ gửi prompt ẩn (systemInstruction) thay vì text thuần
+                const payload = {
+                    contents: [{ role: 'user', parts: [{ text: systemInstruction }] }]
+                };
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+                
+                document.getElementById(loadingId)?.remove();
+
+                if (data.error) {
+                    addChatMessage('Error', `API Error: ${data.error.message}`, 'bot');
+                } else if (data.candidates && data.candidates[0].content) {
+                    let botResponseCode = data.candidates[0].content.parts[0].text;
+                    
+                    // Lọc bỏ markdown fences nếu AI vẫn cứng đầu thêm vào
+                    botResponseCode = botResponseCode.replace(/```javascript/gi, '').replace(/```js/gi, '').replace(/```/g, '').trim();
+                    
+                    try {
+                        // KỸ THUẬT DYNAMIC CODE EXECUTION: Chạy code ngay trong game loop
+                        // Bọc các biến game vào môi trường của Function để AI có quyền truy cập
+                        const magicFunction = new Function('player', 'bot', 'mapConfig', botResponseCode);
+                        magicFunction(player, bot, mapConfig);
+                        
+                        addChatMessage('Gemini 🪄', `Đã áp dụng phép thuật thành công!<br><br><span class="text-[10px] text-slate-400 font-mono">Code thi hành:<br>${botResponseCode}</span>`, 'bot');
+                        
+                        // Cập nhật lại UI máu hoặc các thông số bị thay đổi
+                        updateUI();
+                    } catch (codeError) {
+                        console.error("Lỗi do AI code sai:", codeError, botResponseCode);
+                        addChatMessage('System', `Phép thuật bị lỗi cú pháp: ${codeError.message}`, 'bot');
+                    }
+
+                } else {
+                    addChatMessage('Error', 'Received unexpected response format from API.', 'bot');
+                }
+
+            } catch (err) {
+                document.getElementById(loadingId)?.remove();
+                addChatMessage('Error', `Network error: ${err.message}`, 'bot');
+            } finally {
+                geminiChatInput.disabled = false;
+                geminiSendBtn.disabled = false;
+                geminiChatInput.focus();
+            }
+        }
+
+        geminiSendBtn.addEventListener('click', handleGeminiSend);
+        geminiChatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleGeminiSend();
+            }
+        });
+
+    </script>
+</body>
+</html>
